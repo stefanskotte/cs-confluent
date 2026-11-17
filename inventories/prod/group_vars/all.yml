@@ -1,0 +1,64 @@
+---
+# =============================================================================
+# Confluent Platform 8.2.4 (KRaft) + OpenJDK 21 on RHEL 9 - on-prem / Satellite
+# =============================================================================
+
+# --- Connection: SSH as a sudo-capable deploy user ---------------------------
+ansible_connection: ssh
+ansible_user: ansible            # deploy user on the delivered servers
+ansible_become: true
+ansible_become_method: sudo
+# If sudo needs a password, run with -K (--ask-become-pass) or vault it:
+# ansible_become_password: "{{ vault_become_password }}"
+
+# RHEL 9 system python is 3.9; confluent.platform asserts >= 3.10.
+# playbooks/prepare.yml installs python3.12 before this interpreter is used.
+ansible_python_interpreter: /usr/bin/python3.12
+
+# Expected OS major version (checked by prepare.yml and verify.yml)
+rhel_major: '9'
+
+# --- Versions -----------------------------------------------------------------
+confluent_package_version: 8.2.4
+
+install_java: true
+# Server JRE only. The collection default 'java-21-openjdk' pulls in gtk3/X11 desktop deps.
+redhat_java_package_name: java-21-openjdk-headless
+
+# --- Package sources (Satellite) --------------------------------------------
+# Pick ONE:
+#  none   -> Confluent 8.2 repo is mirrored in Satellite as a custom product and
+#            delivered via the Content View (recommended; prepare.yml checks that
+#            confluent-server-8.2.4 is actually available).
+#  custom -> drop a .repo file on the hosts pointing at a mirror:
+#            custom_yum_repofile_filepath: "{{ inventory_dir }}/files/confluent.repo"
+#  confluent -> hosts reach https://packages.confluent.io directly (internet)
+repository_configuration: none
+
+# CodeReady Builder holds python3.12-packaging. prepare.yml enables
+# codeready-builder-for-rhel-9-<arch>-rpms via RHSM; it must be in the Content View.
+enable_crb_repo: true
+
+# Confluent CLI is downloaded from S3 - disable when the hosts have no internet
+confluent_cli_download_enabled: false
+
+# --- Host firewall ------------------------------------------------------------
+# cp-ansible does NOT touch firewalld. prepare.yml opens the Kafka ports
+# (see PORTS.md) when firewalld is running.
+manage_firewalld: true
+firewalld_zone: public
+
+# --- Data directories (optional) ---------------------------------------------
+# Defaults: brokers /var/lib/kafka/data, controllers /var/lib/controller/data.
+# Point to dedicated mounts if the servers have data disks (the collection
+# creates and chowns the dirs; the mount itself must already exist):
+# kafka_broker_custom_properties:
+#   log.dirs: /data/kafka/data
+# kafka_controller_custom_properties:
+#   log.dirs: /data/controller/data
+
+# --- JVM heap -----------------------------------------------------------------
+# Collection defaults: broker -Xms1g -Xmx6g, controller -Xms1536M -Xmx4g.
+# Size to the delivered RAM if needed, e.g.:
+# kafka_broker_service_environment_overrides:
+#   KAFKA_HEAP_OPTS: "-Xms6g -Xmx6g -XX:MetaspaceSize=96m -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:G1HeapRegionSize=16M -XX:MinMetaspaceFreeRatio=50 -XX:MaxMetaspaceFreeRatio=80"

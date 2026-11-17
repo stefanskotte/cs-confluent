@@ -1,0 +1,106 @@
+---
+# Non-destructive post-install verification - safe to run against production.
+- name: Node checks
+  hosts: kafka_controller:kafka_broker
+  gather_facts: true
+  tasks:
+    - name: Java version
+      ansible.builtin.command: java -version
+      register: java_ver
+      changed_when: false
+
+    - name: Installed Confluent / Java RPMs
+      ansible.builtin.shell: rpm -qa | grep -E '^(confluent-server-[0-9]|java-21-openjdk-headless)' | sort
+      register: rpms
+      changed_when: false
+
+    - name: Service state
+      ansible.builtin.systemd_service:
+        name: "{{ 'confluent-kcontroller' if 'kafka_controller' in group_names else 'confluent-server' }}"
+      register: svc
+
+    - name: Node is healthy
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'RedHat'
+          - ansible_distribution_major_version == rhel_major | string
+          - "'openjdk version \"21' in java_ver.stderr"
+          - "rpms.stdout is search('confluent-server-' ~ confluent_package_version)"
+          - svc.status.ActiveState == 'active'
+        success_msg: "{{ ansible_distribution }} {{ ansible_distribution_version }} | {{ java_ver.stderr_lines[0] }} | {{ rpms.stdout_lines | join(', ') }} | {{ svc.status.Id }} active"
+
+    # Proves host firewalls / EPG contracts between the nodes (PORTS.md rules 1-3)
+    - name: Controller quorum port reachable (9093)
+      ansible.builtin.wait_for:
+        host: "{{ item }}"
+        port: 9093
+        timeout: 5
+      loop: "{{ groups['kafka_controller'] }}"
+
+    - name: Broker inter-broker port reachable from brokers (9091)
+      ansible.builtin.wait_for:
+        host: "{{ item }}"
+        port: 9091
+        timeout: 5
+      loop: "{{ groups['kafka_broker'] }}"
+      when: "'kafka_broker' in group_names"
+
+- name: Cluster checks + smoke test
+  hosts: kafka_broker[0]
+  gather_facts: false
+  vars:
+    bs: "{{ groups['kafka_broker'] | map('regex_replace', '$', ':9092') | join(',') }}"
+    topic: cp-ansible-verify
+    n_ctrl: "{{ groups['kafka_controller'] | length }}"
+    n_brk: "{{ groups['kafka_broker'] | length }}"
+    rf: "{{ [3, n_brk | int] | min }}"
+  tasks:
+    - name: KRaft quorum status
+      ansible.builtin.command: kafka-metadata-quorum --bootstrap-server {{ bs }} describe --status
+      register: quorum
+      changed_when: false
+
+    - name: Quorum has all controllers as voters and all brokers as observers
+      ansible.builtin.assert:
+        that:
+          - (quorum.stdout_lines | select('match', 'CurrentVoters') | first | regex_findall('"id"') | length) == n_ctrl | int
+          - (quorum.stdout_lines | select('match', 'CurrentObservers') | first | regex_findall('"id"') | length) == n_brk | int
+          - quorum.stdout_lines | select('match', 'MaxFollowerLag:\s+0$') | list | length == 1
+        success_msg: "{{ n_ctrl }} voters, {{ n_brk }} observers, lag 0"
+
+    - name: All brokers registered and unfenced
+      ansible.builtin.shell: "kafka-broker-api-versions --bootstrap-server {{ bs }} | grep -c 'isFenced: false'"
+      register: unfenced
+      changed_when: false
+      failed_when: unfenced.stdout | int != n_brk | int
+
+    - name: Create verification topic (RF={{ rf }}, min.insync.replicas=2)
+      ansible.builtin.command: >
+        kafka-topics --bootstrap-server {{ bs }} --create --if-not-exists --topic {{ topic }}
+        --partitions 3 --replication-factor {{ rf }} --config min.insync.replicas=2
+
+    - name: No under-replicated partitions
+      ansible.builtin.command: kafka-topics --bootstrap-server {{ bs }} --describe --under-replicated-partitions
+      register: urp
+      changed_when: false
+      failed_when: urp.stdout | trim | length > 0
+
+    - name: Produce 10 messages (acks=all)
+      ansible.builtin.shell: >
+        seq 1 10 | sed 's/^/verify-/' | kafka-console-producer --bootstrap-server {{ bs }}
+        --topic {{ topic }} --producer-property acks=all
+
+    - name: Consume them back
+      ansible.builtin.shell: >
+        kafka-console-consumer --bootstrap-server {{ bs }} --topic {{ topic }}
+        --from-beginning --max-messages 10 --timeout-ms 60000 | sort -u | wc -l
+      register: consumed
+      changed_when: false
+
+    - name: Delete verification topic
+      ansible.builtin.command: kafka-topics --bootstrap-server {{ bs }} --delete --topic {{ topic }}
+
+    - name: Summary
+      ansible.builtin.assert:
+        that: consumed.stdout | int == 10
+        success_msg: "{{ n_ctrl }} controllers / {{ n_brk }} brokers healthy; 10/10 messages round-tripped; topic cleaned up"

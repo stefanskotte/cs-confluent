@@ -1,0 +1,94 @@
+---
+# Prerequisites for confluent.platform 8.2.x on delivered RHEL servers.
+#  - collection asserts Python >= 3.10 on managed hosts; RHEL system python is older
+#  - its tasks need pip, packaging, cryptography and PyYAML importable by that python
+#  - python3.12-packaging lives in CodeReady Builder (CRB)
+#  - cp-ansible does not manage firewalld
+#  - fails early (before anything is installed) if Satellite content is missing
+- name: Prepare RHEL hosts for cp-ansible
+  hosts: kafka_controller:kafka_broker
+  gather_facts: false
+  vars:
+    python_rpms: [python3.12, python3.12-pip, python3.12-packaging, python3.12-cryptography, python3.12-pyyaml]
+    firewall_ports:
+      kafka_controller: [9093/tcp]                     # KRaft quorum
+      kafka_broker: [9091/tcp, 9092/tcp, 8090/tcp]     # inter-broker, clients, embedded REST
+  tasks:
+    - name: Install python3.12 (raw - before a >= 3.10 interpreter exists)
+      ansible.builtin.raw: rpm -q python3.12 || dnf -y install python3.12
+      register: py
+      changed_when: "'is not installed' in py.stdout"
+
+    - name: Gather facts (now with python3.12)
+      ansible.builtin.setup:
+        gather_subset: [min]
+
+    - name: OS is RHEL {{ rhel_major }}
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'RedHat'
+          - ansible_distribution_major_version == rhel_major | string
+        fail_msg: "Expected RHEL {{ rhel_major }}, got {{ ansible_distribution }} {{ ansible_distribution_version }}"
+        quiet: true
+
+    # ---------------- Satellite / RHSM ----------------
+    - name: Is host registered with RHSM / Satellite?
+      ansible.builtin.command: subscription-manager identity
+      register: rhsm
+      failed_when: false
+      changed_when: false
+
+    - name: Enable CodeReady Builder (must be in the host's Content View)
+      community.general.rhsm_repository:
+        name: "codeready-builder-for-rhel-{{ ansible_distribution_major_version }}-{{ ansible_architecture }}-rpms"
+        state: enabled
+      when: enable_crb_repo | bool and rhsm.rc == 0
+
+    - name: Install Python 3.12 deps as RPMs
+      ansible.builtin.dnf:
+        name: "{{ python_rpms }}"
+        state: present
+
+    # ---------------- Preflight: content available? ----------------
+    - name: Check Java 21 and Confluent packages are available from configured repos
+      ansible.builtin.command: >
+        dnf -q repoquery --qf '%{name}-%{version}'
+        {{ redhat_java_package_name }}
+        {{ ('confluent-server-' ~ confluent_package_version) if repository_configuration == 'none' else '' }}
+      register: avail
+      changed_when: false
+
+    - name: Required packages are available
+      ansible.builtin.assert:
+        that:
+          - avail.stdout is search(redhat_java_package_name ~ '-21')
+          - repository_configuration != 'none' or avail.stdout is search('confluent-server-' ~ confluent_package_version)
+        fail_msg: >-
+          Missing packages in the enabled repos (found: {{ avail.stdout_lines | unique }}).
+          Java 21 comes from AppStream; with repository_configuration=none the Confluent 8.2
+          repo must be in this host's Satellite Content View.
+        quiet: true
+
+    # ---------------- Preflight: name resolution ----------------
+    - name: Every Kafka host resolves every other Kafka host
+      ansible.builtin.command: getent hosts {{ item }}
+      loop: "{{ groups['kafka_controller'] + groups['kafka_broker'] }}"
+      changed_when: false
+
+    # ---------------- Host firewall ----------------
+    - name: Is firewalld running?
+      ansible.builtin.systemd_service:
+        name: firewalld
+      register: fwd
+
+    - name: Open Kafka ports in firewalld (see PORTS.md)
+      ansible.posix.firewalld:
+        port: "{{ item }}"
+        zone: "{{ firewalld_zone }}"
+        permanent: true
+        immediate: true
+        state: enabled
+      loop: "{{ group_names | select('in', firewall_ports) | map('extract', firewall_ports) | flatten | unique }}"
+      when:
+        - manage_firewalld | bool
+        - fwd.status.ActiveState | default('') == 'active'

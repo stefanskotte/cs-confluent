@@ -1,0 +1,11 @@
+---
+# Full on-prem install: prerequisites -> Confluent Platform -> verification
+#   ansible-playbook site.yml            (add -K if sudo needs a password)
+- name: Prerequisites (python3.12, CRB, preflight checks, firewalld)
+  ansible.builtin.import_playbook: playbooks/prepare.yml
+
+- name: Confluent Platform 8.2.4 (KRaft) via confluent.platform
+  ansible.builtin.import_playbook: confluent.platform.all
+
+- name: Verify cluster health
+  ansible.builtin.import_playbook: playbooks/verify.yml

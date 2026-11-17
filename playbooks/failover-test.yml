@@ -1,0 +1,111 @@
+---
+# DISRUPTIVE: stops the active KRaft controller leader AND one broker, proves the
+# cluster keeps accepting acks=all writes, then restarts both and waits for full ISR.
+# Intended for acceptance testing BEFORE go-live. Requires explicit confirmation:
+#   ansible-playbook playbooks/failover-test.yml -e confirm_failover_test=yes
+- name: KRaft failover acceptance test
+  hosts: kafka_broker[0]
+  gather_facts: false
+  vars:
+    bs: "{{ groups['kafka_broker'] | map('regex_replace', '$', ':9092') | join(',') }}"
+    first_bs: "{{ groups['kafka_broker'][0] }}:9092"
+    topic: cp-ansible-failover-test
+    victim_brk: "{{ groups['kafka_broker'][-1] }}"
+  tasks:
+    - name: Require explicit confirmation
+      ansible.builtin.assert:
+        that: confirm_failover_test | default('no') == 'yes'
+        fail_msg: "Disruptive test. Re-run with -e confirm_failover_test=yes"
+
+    - name: Need >= 3 controllers and >= 3 brokers
+      ansible.builtin.assert:
+        that:
+          - groups['kafka_controller'] | length >= 3
+          - groups['kafka_broker'] | length >= 3
+
+    - name: Create test topic (RF=3, min.insync.replicas=2)
+      ansible.builtin.command: >
+        kafka-topics --bootstrap-server {{ bs }} --create --if-not-exists --topic {{ topic }}
+        --partitions 6 --replication-factor 3 --config min.insync.replicas=2
+
+    - name: Produce batch A (healthy cluster)
+      ansible.builtin.shell: >
+        seq 1 100 | sed 's/^/A-/' | kafka-console-producer --bootstrap-server {{ bs }}
+        --topic {{ topic }} --producer-property acks=all
+
+    - name: Current controller leader id
+      ansible.builtin.shell: kafka-metadata-quorum --bootstrap-server {{ bs }} describe --status | awk '/LeaderId/ {print $2}'
+      register: leader
+      changed_when: false
+
+    - name: Map leader id to controller host
+      ansible.builtin.command: grep -qx 'node.id={{ leader.stdout }}' /etc/controller/server.properties
+      delegate_to: "{{ item }}"
+      loop: "{{ groups['kafka_controller'] }}"
+      register: lead_map
+      failed_when: false
+      changed_when: false
+
+    - name: Pick victims
+      ansible.builtin.set_fact:
+        victim_ctrl: "{{ (lead_map.results | selectattr('rc', 'equalto', 0) | first).item }}"
+
+    - name: Stop controller leader ({{ victim_ctrl }}) and broker ({{ victim_brk }})
+      ansible.builtin.systemd_service:
+        name: "{{ item.svc }}"
+        state: stopped
+      delegate_to: "{{ item.host }}"
+      loop:
+        - { host: "{{ victim_ctrl }}", svc: confluent-kcontroller }
+        - { host: "{{ victim_brk }}", svc: confluent-server }
+
+    - name: Wait for a new controller leader
+      ansible.builtin.shell: kafka-metadata-quorum --bootstrap-server {{ first_bs }} describe --status | awk '/LeaderId/ {print $2}'
+      register: newleader
+      until: newleader.stdout | length > 0 and newleader.stdout != leader.stdout
+      retries: 30
+      delay: 2
+      changed_when: false
+
+    - name: Produce batch B while degraded (acks=all, 2/3 ISR)
+      ansible.builtin.shell: >
+        seq 1 100 | sed 's/^/B-/' | kafka-console-producer --bootstrap-server {{ first_bs }}
+        --topic {{ topic }} --producer-property acks=all
+      register: prodb
+      retries: 5
+      delay: 5
+      until: prodb.rc == 0 and 'ERROR' not in prodb.stderr
+
+    - name: Consume everything while degraded
+      ansible.builtin.shell: >
+        kafka-console-consumer --bootstrap-server {{ first_bs }} --topic {{ topic }}
+        --from-beginning --max-messages 200 --timeout-ms 60000 | sort -u | wc -l
+      register: consumed
+      changed_when: false
+
+    - name: Restart stopped nodes
+      ansible.builtin.systemd_service:
+        name: "{{ item.svc }}"
+        state: started
+      delegate_to: "{{ item.host }}"
+      loop:
+        - { host: "{{ victim_ctrl }}", svc: confluent-kcontroller }
+        - { host: "{{ victim_brk }}", svc: confluent-server }
+
+    - name: Wait until no under-replicated partitions
+      ansible.builtin.command: kafka-topics --bootstrap-server {{ bs }} --describe --under-replicated-partitions
+      register: urp
+      until: urp.rc == 0 and urp.stdout | trim | length == 0
+      retries: 30
+      delay: 4
+      changed_when: false
+
+    - name: Delete test topic
+      ansible.builtin.command: kafka-topics --bootstrap-server {{ bs }} --delete --topic {{ topic }}
+
+    - name: Result
+      ansible.builtin.assert:
+        that: consumed.stdout | int == 200
+        success_msg: >-
+          leader {{ leader.stdout }} ({{ victim_ctrl }}) -> {{ newleader.stdout }}; {{ victim_brk }} down;
+          200/200 messages consumed; nodes restarted; 0 under-replicated partitions
