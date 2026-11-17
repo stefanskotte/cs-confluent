@@ -8,6 +8,10 @@ Validated on 2026-11-17 in RHEL 8.10 (UBI 8 + systemd) containers with
 **3 controllers + 3 brokers**. The `confluent.platform` collection did the whole
 install, including Java. The run covered a fresh install, verify, a failover
 test and an idempotency rerun; see [3+3 results](#33-cluster-results).
+>
+> **On-prem deployment (no Docker):** [`onprem-rhel9`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel9) ·
+> [`onprem-rhel8`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel8). These branches (main/rhel8)
+> are the Docker lab validation and background.
 
 ## Network / firewall (EPG) port map
 
