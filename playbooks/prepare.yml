@@ -82,6 +82,10 @@
       register: fwd
 
     - name: Open Kafka ports in firewalld (see PORTS.md)
+      # firewalld's python bindings only exist for RHEL 8's platform-python (3.6),
+      # and the module does not respawn into it from python3.12 -> run this task there.
+      vars:
+        ansible_python_interpreter: /usr/libexec/platform-python
       ansible.posix.firewalld:
         port: "{{ item }}"
         zone: "{{ firewalld_zone }}"

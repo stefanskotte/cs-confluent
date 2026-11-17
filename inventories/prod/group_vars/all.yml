@@ -1,6 +1,6 @@
 ---
 # =============================================================================
-# Confluent Platform 8.2.4 (KRaft) + OpenJDK 21 on RHEL 9 - on-prem / Satellite
+# Confluent Platform 8.2.4 (KRaft) + OpenJDK 21 on RHEL 8 - on-prem / Satellite
 # =============================================================================
 
 # --- Connection: SSH as a sudo-capable deploy user ---------------------------
@@ -11,12 +11,13 @@ ansible_become_method: sudo
 # If sudo needs a password, run with -K (--ask-become-pass) or vault it:
 # ansible_become_password: "{{ vault_become_password }}"
 
-# RHEL 9 system python is 3.9; confluent.platform asserts >= 3.10.
+# RHEL 8 system python is 3.6; confluent.platform asserts >= 3.10.
+# (dnf/firewalld tasks still run under platform-python 3.6 -> control node needs ansible-core 2.16)
 # playbooks/prepare.yml installs python3.12 before this interpreter is used.
 ansible_python_interpreter: /usr/bin/python3.12
 
 # Expected OS major version (checked by prepare.yml and verify.yml)
-rhel_major: '9'
+rhel_major: '8'
 
 # --- Versions -----------------------------------------------------------------
 confluent_package_version: 8.2.4
@@ -36,7 +37,7 @@ redhat_java_package_name: java-21-openjdk-headless
 repository_configuration: none
 
 # CodeReady Builder holds python3.12-packaging. prepare.yml enables
-# codeready-builder-for-rhel-9-<arch>-rpms via RHSM; it must be in the Content View.
+# codeready-builder-for-rhel-8-<arch>-rpms via RHSM; it must be in the Content View.
 enable_crb_repo: true
 
 # Confluent CLI is downloaded from S3 - disable when the hosts have no internet

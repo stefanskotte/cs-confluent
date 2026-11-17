@@ -1,11 +1,11 @@
-# Confluent Platform 8.2 (KRaft) on-prem on RHEL 9 with cp-ansible
+# Confluent Platform 8.2 (KRaft) on-prem on RHEL 8 with cp-ansible
 
-> **Branch `onprem-rhel9`.** Production layout for delivered RHEL 9 servers: SSH, sudo, Satellite. No Docker.
+> **Branch `onprem-rhel8`.** Production layout for delivered RHEL 8 servers: SSH, sudo, Satellite. No Docker.
 >
 > | Branch | Purpose |
 > |---|---|
-> | **`onprem-rhel9`** (this) | On-prem deployment, RHEL 9 |
-> | [`onprem-rhel8`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel8) | On-prem deployment, RHEL 8 |
+> | [`onprem-rhel9`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel9) | On-prem deployment, RHEL 9 |
+> | **`onprem-rhel8`** (this) | On-prem deployment, RHEL 8 |
 > | [`main`](https://github.com/stefanskotte/cs-confluent/tree/main) / [`rhel8`](https://github.com/stefanskotte/cs-confluent/tree/rhel8) | Docker lab validation + background on every adjustment |
 
 ## Network / firewall (EPG) port map
@@ -30,17 +30,17 @@
 
 | Component | Version |
 |---|---|
-| Managed hosts | RHEL 9 (validated on 9.9) |
+| Managed hosts | RHEL 8 (validated on **8.10**; Content View must be at 8.10 for `python3.12*`) |
 | Confluent Platform | **8.2.4** (KRaft only) via `confluent.platform` collection **8.2.4** |
-| Java | `java-21-openjdk-headless` (RHEL 9 AppStream; validated 21.0.13) |
-| Control node | **ansible-core 2.18.x** (not 2.19), Python 3.11+ |
+| Java | `java-21-openjdk-headless` (RHEL 8 AppStream; validated 21.0.13) |
+| Control node | **ansible-core 2.16.x** (2.17+ cannot manage RHEL 8), Python **3.10–3.12** |
 | Python on hosts | `python3.12` from AppStream (installed by `prepare.yml`) |
 
 ## Layout
 
 ```
 ansible.cfg                         hash_behaviour=merge, skip pip-package, inventory path
-requirements.yml                    confluent.platform 8.2.4, ansible.posix, community.general
+requirements.yml                    confluent.platform 8.2.4, ansible.posix 2.2.2, community.general 11.4.10 (2.16-compatible)
 site.yml                            prepare -> confluent.platform.all -> verify
 inventories/prod/hosts.yml          controllers + brokers (FQDNs)  <- EDIT
 inventories/prod/group_vars/all.yml all settings                   <- EDIT
@@ -52,11 +52,11 @@ PORTS.md, epg-port-map.csv          network / EPG order
 
 ## Prerequisites
 
-**Servers (delivered RHEL 9)**
+**Servers (delivered RHEL 8)**
 - 3 controllers + 3 brokers (an odd number of controllers; 3+ brokers for RF=3)
 - Registered to **Satellite**, with a Content View that contains:
-  - `rhel-9-for-<arch>-baseos-rpms`, `rhel-9-for-<arch>-appstream-rpms`
-  - `codeready-builder-for-rhel-9-<arch>-rpms`, needed for `python3.12-packaging`
+  - `rhel-8-for-<arch>-baseos-rpms`, `rhel-8-for-<arch>-appstream-rpms` (8.10 content)
+  - `codeready-builder-for-rhel-8-<arch>-rpms`, needed for `python3.12-packaging`
   - **Confluent 8.2** as a custom product (`https://packages.confluent.io/rpm/8.2`,
     GPG key `https://packages.confluent.io/rpm/8.2/archive.key`)
 - DNS: every host's FQDN resolves from every other host *and* from the clients.
@@ -66,17 +66,18 @@ PORTS.md, epg-port-map.csv          network / EPG order
 - EPG contracts in place (see [PORTS.md](PORTS.md))
 
 **Control node**
-- Python 3.11+, network access to the hosts on port 22
+- Python **3.10–3.12** (ansible-core 2.16 doesn't run on newer), network access to the hosts on port 22.
+  On a RHEL 8 control node you can use Red Hat's `dnf install ansible-core` (2.16) instead of pip.
 - Internet access *or* internal mirrors for PyPI (ansible-core) and Galaxy / Automation Hub (collections)
 
 ## Install
 
 ```bash
-git clone -b onprem-rhel9 https://github.com/stefanskotte/cs-confluent.git && cd cs-confluent
+git clone -b onprem-rhel8 https://github.com/stefanskotte/cs-confluent.git && cd cs-confluent
 
 # 1. Control node tooling
-python3 -m venv .venv && . .venv/bin/activate
-pip install "ansible-core>=2.18,<2.19"
+python3.12 -m venv .venv && . .venv/bin/activate
+pip install "ansible-core>=2.16,<2.17"
 ansible-galaxy collection install -r requirements.yml -p ./collections
 
 # 2. Describe the environment
@@ -102,7 +103,7 @@ run on its own at any time.
 
 ## What `playbooks/prepare.yml` does (and checks before anything is installed)
 
-1. Installs `python3.12` (via `raw`). RHEL 9's python 3.9 is below the collection's 3.10 minimum.
+1. Installs `python3.12` (via `raw`). RHEL 8's python 3.6 is below the collection's 3.10 minimum.
 2. Asserts the OS is RHEL `rhel_major`.
 3. If the host is registered with RHSM: enables the **CodeReady Builder** repo
    (`enable_crb_repo`). It fails if CRB isn't in the Content View.
@@ -111,6 +112,7 @@ run on its own at any time.
    `repository_configuration: none`. This catches a missing Satellite Content View before anything is installed.
 6. **Preflight:** every Kafka host resolves every other Kafka host.
 7. **firewalld:** if it's running and `manage_firewalld: true`, opens the role's ports (permanent + immediate).
+   On RHEL 8 this one task runs under `/usr/libexec/platform-python`, because firewalld's Python bindings only exist for 3.6 and the module fails under python3.12.
 
 ## Key settings (`inventories/prod/group_vars/all.yml`)
 
@@ -129,22 +131,33 @@ run on its own at any time.
 Commented examples in the file cover data disks (`log.dirs`) and JVM heap.
 The collection defaults are broker `-Xms1g -Xmx6g` and controller `-Xms1536M -Xmx4g`.
 
+## RHEL 8 specifics (vs. `onprem-rhel9`)
+
+| | RHEL 8 (this branch) | RHEL 9 |
+|---|---|---|
+| ansible-core | **2.16.x**. The `dnf` module re-executes under platform-python 3.6, which 2.17+ can't target | 2.18.x |
+| Collections | `ansible.posix` 2.2.2, `community.general` 11.4.10 (pinned) | latest |
+| firewalld task | runs with `ansible_python_interpreter: /usr/libexec/platform-python` | python3.12 (module respawns to 3.9) |
+| `rhel_major` | `'8'` | `'9'` |
+| CRB repo | `codeready-builder-for-rhel-8-<arch>-rpms` | `...-rhel-9-...` |
+| Everything else | identical | identical |
+
 ## Validation of this branch
 
 Run as an operator would. The only difference was a lab inventory with lab
 FQDNs and a small overrides file (no Satellite, so `repository_configuration: confluent`;
-small heaps). These were 6 RHEL 9.9 hosts reached over **SSH as the non-root
+small heaps). These were 6 RHEL 8.10 hosts reached over **SSH as the non-root
 `ansible` user with sudo**, with no python3.12 and no Java preinstalled. The
 branch's `group_vars/all.yml` was used unchanged.
 
 | Step | Result |
 |---|---|
-| `ansible-playbook site.yml` (fresh) | **0 failed** on 6 hosts; python3.12, Java 21 and CP 8.2.4 installed; pip tasks skipped via `ansible.cfg` |
-| verify (part of site.yml) | 6/6 nodes RHEL 9.9 / OpenJDK 21.0.13 / `confluent-server-8.2.4`; ports 9093 and 9091 reachable node-to-node; 3 voters + 3 observers, lag 0; 10/10 messages; topic cleaned up |
+| `ansible-playbook site.yml` (fresh, ansible-core 2.16.20) | **0 failed** on 6 hosts; python3.12, Java 21 and CP 8.2.4 installed; pip tasks skipped via `ansible.cfg` |
+| verify (part of site.yml) | 6/6 nodes RHEL 8.10 / OpenJDK 21.0.13 / `confluent-server-8.2.4`; ports 9093 and 9091 reachable node-to-node; 3 voters + 3 observers, lag 0; 10/10 messages; topic cleaned up |
 | `failover-test.yml` without confirmation | Refuses to run ✔ |
 | `failover-test.yml -e confirm_failover_test=yes` | Leader 9991 stopped → 9992 elected, broker 3 down, 200/200 messages, back to 0 under-replicated ✔ |
-| `site.yml` re-run | **0 failed**, no restarts (only the collection's cosmetic log4j-backup / format-storage tasks + verify's own topic) |
-| firewalld tasks (AlmaLinux 9.9, UBI has no firewalld) | Opened 9091/9092/8090 runtime + permanent ✔ |
+| `site.yml` re-run | **0 failed**, no restarts, no collection-version warnings (only the collection's cosmetic log4j-backup / format-storage tasks + verify's own topic) |
+| firewalld tasks (AlmaLinux 8.10, UBI has no firewalld) | Under python3.12: `Failed to import the required Python library (firewall)`. With the platform-python task interpreter: 9093 opened runtime + permanent ✔ |
 
 **Not validated here, so check on the first real server:**
 - `rhsm_repository` against your Satellite (the lab hosts were not registered)
@@ -152,6 +165,6 @@ branch's `group_vars/all.yml` was used unchanged.
 - **SELinux enforcing**: the containers run without SELinux
 - TLS/SASL/RBAC: this setup is plaintext, as in the lab
 
-Background on every RHEL 9 adjustment (ansible-core 2.19 bug, hash merging,
-Python 3.12, CRB, headless JDK) is in the
-[`main` branch README](https://github.com/stefanskotte/cs-confluent/tree/main#what-had-to-be-adjusted-to-make-the-collection-work-on-rhel-9).
+Background on every RHEL 8 adjustment (ansible-core 2.16 vs dnf/platform-python, collection pins,
+hash merging, Python 3.12, CRB, headless JDK) is in the
+[`rhel8` branch README](https://github.com/stefanskotte/cs-confluent/tree/rhel8#what-had-to-be-adjusted-to-make-the-collection-work-on-rhel-8).

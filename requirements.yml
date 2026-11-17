@@ -1,6 +1,9 @@
 ---
+# Pinned to versions that support ansible-core 2.16 (required for RHEL 8 targets)
 collections:
   - name: confluent.platform
     version: "8.2.4"
   - name: ansible.posix          # firewalld
+    version: "2.2.2"
   - name: community.general      # rhsm_repository
+    version: "11.4.10"
