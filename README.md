@@ -139,4 +139,5 @@ replacing controllers later is a planned operation, not a hot add.
   defaults are broker `-Xms1g -Xmx6g` and controller `-Xms1536M -Xmx4g`.
 - `ansible.cfg`, `requirements.yml`, `prepare.yml`, `verify.yml`, `customer-vars.yml`
 - `install.log`, `install-rerun.log`, `prepare.log`, `verify.log`: run evidence (RHEL 8 runs)
+- `PORTS.md`, `epg-port-map.csv`: port map / EPG contract request
 - Tear down: `docker compose down`

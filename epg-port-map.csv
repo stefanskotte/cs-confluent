@@ -1,0 +1,18 @@
+id,category,consumer_epg,provider_epg,protocol,port,purpose,required,notes
+1,cluster,EPG-KAFKA-CTRL,EPG-KAFKA-CTRL,tcp,9093,KRaft controller quorum (Raft),yes,intra-EPG; needs explicit contract if intra-EPG isolation enforced
+2,cluster,EPG-KAFKA-BRK,EPG-KAFKA-CTRL,tcp,9093,Broker metadata fetch/registration/heartbeat to controllers,yes,
+3,cluster,EPG-KAFKA-BRK,EPG-KAFKA-BRK,tcp,9091,Inter-broker listener BROKER (replication),yes,intra-EPG; needs explicit contract if intra-EPG isolation enforced
+4,client,EPG-KAFKA-CLIENTS,EPG-KAFKA-BRK,tcp,9092,Client listener INTERNAL (produce/consume),yes,PLAINTEXT today
+5,deploy,EPG-ANSIBLE,EPG-KAFKA-CTRL;EPG-KAFKA-BRK,tcp,22,SSH for cp-ansible,yes,
+6,platform,EPG-KAFKA-CTRL;EPG-KAFKA-BRK,EPG-SATELLITE,tcp,443,RHSM + content incl. CRB and Confluent mirror,yes,
+7,admin,EPG-KAFKA-ADMIN,EPG-KAFKA-BRK,tcp,9092,Kafka CLI tools,recommended,
+8,admin,EPG-KAFKA-ADMIN,EPG-KAFKA-BRK,tcp,8090,Confluent Server embedded REST / Admin API v3,recommended,listening by default on all brokers
+9,admin,EPG-KAFKA-ADMIN,EPG-KAFKA-CTRL;EPG-KAFKA-BRK,tcp,22,Ops SSH,recommended,
+10,platform,EPG-SATELLITE,EPG-KAFKA-CTRL;EPG-KAFKA-BRK,tcp,22,Satellite Remote Execution,optional,only if REX is used
+11,internet,EPG-KAFKA-CTRL;EPG-KAFKA-BRK,packages.confluent.io,tcp,443,Confluent RPM repo,only-if-not-mirrored,avoid via Satellite custom product
+12,internet,EPG-KAFKA-CTRL;EPG-KAFKA-BRK,s3-us-west-2.amazonaws.com,tcp,443,Confluent CLI download,only-if-enabled,avoid via confluent_cli_download_enabled=false
+13,internet,EPG-KAFKA-CTRL;EPG-KAFKA-BRK,pypi.org;files.pythonhosted.org,tcp,443,collection pip tasks,no,avoided with --skip-tags pip-package
+14,optional,EPG-MONITORING,EPG-KAFKA-CTRL,tcp,7770,Jolokia controller,only-if-enabled,jolokia_enabled=false by default
+15,optional,EPG-MONITORING,EPG-KAFKA-BRK,tcp,7771,Jolokia broker,only-if-enabled,jolokia_enabled=false by default
+16,optional,EPG-MONITORING,EPG-KAFKA-CTRL,tcp,8079,JMX exporter controller,only-if-enabled,jmxexporter_enabled=false by default
+17,optional,EPG-MONITORING,EPG-KAFKA-BRK,tcp,8080,JMX exporter broker,only-if-enabled,jmxexporter_enabled=false by default
