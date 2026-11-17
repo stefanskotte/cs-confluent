@@ -4,16 +4,16 @@
 > For RHEL 8 see the [`rhel8` branch](https://github.com/stefanskotte/cs-confluent/tree/rhel8).
 > Both use the same Confluent versions and vars. RHEL 8 needs **ansible-core 2.16** on the
 > control node (2.17+ can't drive `dnf` on RHEL 8's Python 3.6) and `community.general` 11.4.10.
+>
+> **On-prem deployment (no Docker):** [`onprem-rhel9`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel9) ·
+> [`onprem-rhel8`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel8). These branches (main/rhel8)
+> are the Docker lab validation and background.
 
 Validated on 2026-11-16 in RHEL 9.9 (UBI 9 + systemd) containers. The
 `confluent.platform` collection did the whole install, including Java:
 - **1 controller + 1 broker**: install, verify and smoke test
 - **3 controllers + 3 brokers** (production-shaped KRaft): fresh install, verify,
   failover test and idempotency rerun. See [3+3 results](#33-cluster-results).
->
-> **On-prem deployment (no Docker):** [`onprem-rhel9`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel9) ·
-> [`onprem-rhel8`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel8). These branches (main/rhel8)
-> are the Docker lab validation and background.
 
 ## Network / firewall (EPG) port map
 
