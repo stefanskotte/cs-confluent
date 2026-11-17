@@ -1,5 +1,10 @@
 # Confluent Platform 8.2 (KRaft) on RHEL 9 with cp-ansible – validated setup
 
+> **Branch `main`.** This branch covers RHEL 9.
+> For RHEL 8 see the [`rhel8` branch](https://github.com/stefanskotte/cs-confluent/tree/rhel8).
+> Both use the same Confluent versions and vars. RHEL 8 needs **ansible-core 2.16** on the
+> control node (2.17+ can't drive `dnf` on RHEL 8's Python 3.6) and `community.general` 11.4.10.
+
 Validated on 2026-11-16 in RHEL 9.9 (UBI 9 + systemd) containers. The
 `confluent.platform` collection did the whole install, including Java:
 - **1 controller + 1 broker**: install, verify and smoke test
