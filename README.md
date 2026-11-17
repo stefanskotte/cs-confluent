@@ -10,6 +10,10 @@ Validated on 2026-11-16 in RHEL 9.9 (UBI 9 + systemd) containers. The
 - **1 controller + 1 broker**: install, verify and smoke test
 - **3 controllers + 3 brokers** (production-shaped KRaft): fresh install, verify,
   failover test and idempotency rerun. See [3+3 results](#33-cluster-results).
+>
+> **On-prem deployment (no Docker):** [`onprem-rhel9`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel9) ·
+> [`onprem-rhel8`](https://github.com/stefanskotte/cs-confluent/tree/onprem-rhel8). These branches (main/rhel8)
+> are the Docker lab validation and background.
 
 ## Network / firewall (EPG) port map
 
