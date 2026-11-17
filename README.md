@@ -9,6 +9,24 @@ Validated on 2026-11-17 in RHEL 8.10 (UBI 8 + systemd) containers with
 install, including Java. The run covered a fresh install, verify, a failover
 test and an idempotency rerun; see [3+3 results](#33-cluster-results).
 
+## Network / firewall (EPG) port map
+
+**→ [PORTS.md](PORTS.md)** (EPGs, contracts, rationale, flow diagram) ·
+**[epg-port-map.csv](epg-port-map.csv)** (for the network/ACI order)
+
+| Source | Destination | Port (TCP) | Purpose |
+|---|---|---|---|
+| Controllers | Controllers | 9093 | KRaft quorum |
+| Brokers | Controllers | 9093 | Metadata / registration |
+| Brokers | Brokers | 9091 | Replication (inter-broker) |
+| Clients | Brokers | 9092 | Produce / consume |
+| Ansible control node | All Kafka hosts | 22 | cp-ansible over SSH |
+| All Kafka hosts | Satellite | 443 | RHSM + content (incl. CRB) |
+| Admin hosts | Brokers | 8090 | Embedded REST / Admin API (recommended) |
+
+The same ports apply to RHEL 8 and RHEL 9. See PORTS.md for optional ports,
+internet egress, and ports that must *not* be opened.
+
 | Component | Version |
 |---|---|
 | OS (managed hosts) | RHEL 8.10 |
