@@ -45,7 +45,8 @@ site.yml                            prepare -> confluent.platform.all -> verify
 inventories/prod/hosts.yml          controllers + brokers (FQDNs)  <- EDIT
 inventories/prod/group_vars/all.yml all settings                   <- EDIT
 playbooks/prepare.yml               python3.12, CRB, preflight checks, firewalld
-playbooks/verify.yml                non-destructive health check (safe in prod)
+playbooks/verify.yml                non-destructive end-to-end check (safe in prod)
+(health check)                      ansible-playbook confluent.platform.health_check
 playbooks/failover-test.yml         DISRUPTIVE acceptance test (opt-in)
 PORTS.md, epg-port-map.csv          network / EPG order
 ```
@@ -99,6 +100,31 @@ ansible-playbook playbooks/failover-test.yml -e confirm_failover_test=yes
 
 `site.yml` is idempotent, so it's safe to re-run. `playbooks/verify.yml` can be
 run on its own at any time.
+
+## Health check
+
+Use Confluent's own playbook, which ships with the `confluent.platform` collection.
+There's nothing extra to install, and it's read-only:
+
+```bash
+ansible-playbook confluent.platform.health_check                     # whole cluster
+ansible-playbook confluent.platform.health_check --tags kafka_broker  # only brokers (or kafka_controller)
+```
+
+What it checks:
+- **Controllers:** the KRaft metadata quorum is reachable, and every voter is within
+  1000 offsets of the leader.
+- **Brokers:** no under-replicated partitions (retries 15 × 5 s), and the embedded REST
+  API answers where applicable. On failure it fetches the service logs and config to the
+  control node and exits non-zero.
+
+The same checks also run automatically at the end of every install
+(`health_checks_enabled: true` is the collection default). In the validation runs
+below they passed on all 6 nodes.
+
+For a deeper end-to-end check, run `playbooks/verify.yml`. It also covers services,
+node-to-node ports and a produce/consume round trip, using a temporary topic that is
+deleted afterwards.
 
 ## What `playbooks/prepare.yml` does (and checks before anything is installed)
 
