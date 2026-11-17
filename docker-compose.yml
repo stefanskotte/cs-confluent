@@ -1,7 +1,7 @@
-name: cp-rhel9
+name: cp-rhel8
 x-node: &node
-  build: { context: ., dockerfile: Dockerfile.rhel9 }
-  image: local/rhel9-systemd:latest
+  build: { context: ., dockerfile: Dockerfile.rhel8 }
+  image: local/rhel8-systemd:latest
   privileged: true
   cgroup: host
   tmpfs: [/run, /tmp]

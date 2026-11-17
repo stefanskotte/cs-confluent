@@ -1,9 +1,9 @@
 ---
-# Bootstrap RHEL 9 hosts for confluent.platform 8.2.x
-#  - collection asserts Python >= 3.10 on managed hosts; RHEL 9 system python3 is 3.9
+# Bootstrap RHEL 8/9 hosts for confluent.platform 8.2.x
+#  - collection asserts Python >= 3.10 on managed hosts; RHEL 9 system python3 is 3.9, RHEL 8 is 3.6
 #  - its pip/pip-package tasks need pip + 'packaging' importable by that interpreter
-#  - python3.12-packaging lives in CodeReady Builder (CRB) on RHEL 9
-- name: Prepare RHEL 9 hosts for cp-ansible
+#  - python3.12-packaging lives in CodeReady Builder (CRB) on RHEL 8 and 9
+- name: Prepare RHEL 8/9 hosts for cp-ansible
   hosts: all
   gather_facts: false
   vars:
@@ -26,7 +26,7 @@
 
     - name: Enable CodeReady Builder repo (registered RHEL only; UBI/Satellite may already provide it)
       community.general.rhsm_repository:
-        name: "codeready-builder-for-rhel-9-{{ ansible_architecture }}-rpms"
+        name: "codeready-builder-for-rhel-{{ ansible_distribution_major_version }}-{{ ansible_architecture }}-rpms"
         state: enabled
       when: rhsm.rc == 0
 

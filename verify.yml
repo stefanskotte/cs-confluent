@@ -1,11 +1,13 @@
 ---
-- name: Verify RHEL9 / OpenJDK 21 / CP 8.2 KRaft install (every node)
+- name: Verify RHEL / OpenJDK 21 / CP 8.2 KRaft install (every node)
   hosts: kafka_controller:kafka_broker
   gather_facts: true
+  vars:
+    expected_rhel_major: "{{ rhel_major | default('9') }}"
   tasks:
-    - name: OS is RHEL 9
+    - name: OS is RHEL {{ expected_rhel_major }}
       ansible.builtin.assert:
-        that: [ansible_distribution == 'RedHat', ansible_distribution_major_version == '9']
+        that: [ansible_distribution == 'RedHat', ansible_distribution_major_version == expected_rhel_major]
         quiet: true
 
     - name: Java version

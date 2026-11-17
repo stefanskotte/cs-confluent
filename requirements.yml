@@ -1,5 +1,8 @@
 collections:
   - name: confluent.platform
     version: "8.2.4"
+  # newest versions that still declare support for ansible-core 2.16 (required for RHEL 8 targets)
   - name: community.general
+    version: "11.4.10"
   - name: community.docker   # lab only (docker connection)
+    version: "4.8.9"

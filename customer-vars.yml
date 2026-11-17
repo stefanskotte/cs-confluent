@@ -1,20 +1,22 @@
 ---
 # ---------------------------------------------------------------------------
 # Vars to merge into the existing inventory / group_vars/all.yml
-# Validated: RHEL 9.9 + confluent.platform 8.2.4 + CP 8.2.4 (KRaft) + OpenJDK 21
+# Validated: RHEL 8.10 + confluent.platform 8.2.4 + CP 8.2.4 (KRaft) + OpenJDK 21
+# Control node MUST run ansible-core 2.16.x for RHEL 8 targets (see README)
 # ---------------------------------------------------------------------------
 all:
   vars:
     # --- Confluent Platform version (required; collection fails early if empty)
     confluent_package_version: 8.2.4
 
-    # --- Java: OpenJDK 21 from RHEL 9 AppStream
+    # --- Java: OpenJDK 21 from RHEL 8 AppStream
     install_java: true
     # headless = server JRE. The collection default 'java-21-openjdk' also pulls in
-    # gtk3 / tracker / NetworkManager-libnm / X11 libs (~250 MB) on RHEL 9.
+    # gtk3 / X11 desktop libs.
     redhat_java_package_name: java-21-openjdk-headless
 
-    # --- Python on managed hosts: collection asserts >= 3.10, RHEL 9 system python is 3.9
+    # --- Python on managed hosts: collection asserts >= 3.10, RHEL 8 system python is 3.6
+# (dnf tasks still respawn into /usr/libexec/platform-python 3.6 - hence ansible-core 2.16)
     # (python3.12 + deps installed by prepare.yml before running the collection)
     ansible_python_interpreter: /usr/bin/python3.12
 

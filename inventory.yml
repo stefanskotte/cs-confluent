@@ -1,12 +1,14 @@
 ---
 all:
   vars:
-    # Lab transport: docker exec into the RHEL9 containers (use SSH on real hosts)
+    # Lab transport: docker exec into the RHEL 8 containers (use SSH on real hosts)
     ansible_connection: community.docker.docker
     ansible_user: root
     ansible_become: true
 
-    # RHEL 9 system python is 3.9; cp-ansible 8.2 needs >= 3.10 (installed by prepare.yml)
+    rhel_major: '8'   # used by verify.yml
+
+    # RHEL 8 system python is 3.6 (RHEL 9: 3.9); cp-ansible 8.2 needs >= 3.10 (installed by prepare.yml)
     ansible_python_interpreter: /usr/bin/python3.12
 
     # Confluent Platform 8.2 (KRaft-only) + OpenJDK 21 from RHEL AppStream
