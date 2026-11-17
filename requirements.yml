@@ -1,0 +1,5 @@
+collections:
+  - name: confluent.platform
+    version: "8.2.4"
+  - name: community.general
+  - name: community.docker   # lab only (docker connection)

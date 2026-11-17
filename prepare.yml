@@ -1,0 +1,36 @@
+---
+# Bootstrap RHEL 9 hosts for confluent.platform 8.2.x
+#  - collection asserts Python >= 3.10 on managed hosts; RHEL 9 system python3 is 3.9
+#  - its pip/pip-package tasks need pip + 'packaging' importable by that interpreter
+#  - python3.12-packaging lives in CodeReady Builder (CRB) on RHEL 9
+- name: Prepare RHEL 9 hosts for cp-ansible
+  hosts: all
+  gather_facts: false
+  vars:
+    rhel9_python_rpms: [python3.12, python3.12-pip, python3.12-packaging, python3.12-cryptography, python3.12-pyyaml]
+  tasks:
+    - name: Install python3.12 (raw - before a >=3.10 interpreter exists)
+      ansible.builtin.raw: rpm -q python3.12 || dnf -y install python3.12
+      register: py
+      changed_when: "'is not installed' in py.stdout"
+
+    - name: Gather facts (now with python3.12)
+      ansible.builtin.setup:
+        gather_subset: [min]
+
+    - name: Is host registered with RHSM?
+      ansible.builtin.command: subscription-manager identity
+      register: rhsm
+      failed_when: false
+      changed_when: false
+
+    - name: Enable CodeReady Builder repo (registered RHEL only; UBI/Satellite may already provide it)
+      community.general.rhsm_repository:
+        name: "codeready-builder-for-rhel-9-{{ ansible_architecture }}-rpms"
+        state: enabled
+      when: rhsm.rc == 0
+
+    - name: Install Python 3.12 deps as RPMs
+      ansible.builtin.dnf:
+        name: "{{ rhel9_python_rpms }}"
+        state: present

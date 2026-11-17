@@ -1,0 +1,169 @@
+---
+- name: Verify RHEL9 / OpenJDK 21 / CP 8.2 KRaft install (every node)
+  hosts: kafka_controller:kafka_broker
+  gather_facts: true
+  tasks:
+    - name: OS is RHEL 9
+      ansible.builtin.assert:
+        that: [ansible_distribution == 'RedHat', ansible_distribution_major_version == '9']
+        quiet: true
+
+    - name: Java version
+      ansible.builtin.command: java -version
+      register: java_ver
+      changed_when: false
+
+    - name: Installed Confluent / Java RPMs
+      ansible.builtin.shell: rpm -qa | grep -E '^(confluent-server-[0-9]|java-21-openjdk-headless)' | sort
+      register: rpms
+      changed_when: false
+
+    - name: Service state
+      ansible.builtin.systemd_service:
+        name: "{{ 'confluent-kcontroller' if 'kafka_controller' in group_names else 'confluent-server' }}"
+      register: svc
+
+    - name: Node checks
+      ansible.builtin.assert:
+        that:
+          - "'openjdk version \"21' in java_ver.stderr"
+          - "rpms.stdout is search('confluent-server-8\\.2\\.4')"
+          - svc.status.ActiveState == 'active'
+        success_msg: "{{ ansible_distribution }} {{ ansible_distribution_version }} | {{ java_ver.stderr_lines[0] }} | {{ rpms.stdout_lines | join(', ') }} | {{ svc.status.Id }} active"
+
+- name: Cluster checks + failover test
+  hosts: kafka_broker[0]
+  gather_facts: false
+  vars:
+    bs: "{{ groups['kafka_broker'] | map('regex_replace', '$', ':9092') | join(',') }}"
+    topic: smoke-test
+    n_ctrl: "{{ groups['kafka_controller'] | length }}"
+    n_brk: "{{ groups['kafka_broker'] | length }}"
+    rf: "{{ [3, n_brk | int] | min }}"
+  tasks:
+    - name: KRaft quorum status
+      ansible.builtin.command: kafka-metadata-quorum --bootstrap-server {{ bs }} describe --status
+      register: quorum
+      changed_when: false
+    - ansible.builtin.debug: { var: quorum.stdout_lines }
+
+    - name: Quorum has all controllers as voters and all brokers as observers
+      ansible.builtin.assert:
+        that:
+          - (quorum.stdout_lines | select('match', 'CurrentVoters') | first | regex_findall('"id"') | length) == n_ctrl | int
+          - (quorum.stdout_lines | select('match', 'CurrentObservers') | first | regex_findall('"id"') | length) == n_brk | int
+          - quorum.stdout_lines | select('match', 'MaxFollowerLag:\s+0$') | list | length == 1
+        success_msg: "{{ n_ctrl }} voters, {{ n_brk }} observers, lag 0"
+
+    - name: Replication lag per node
+      ansible.builtin.command: kafka-metadata-quorum --bootstrap-server {{ bs }} describe --replication
+      register: repl
+      changed_when: false
+    - ansible.builtin.debug: { var: repl.stdout_lines }
+
+    - name: All brokers registered and unfenced
+      ansible.builtin.shell: "kafka-broker-api-versions --bootstrap-server {{ bs }} | grep -c 'isFenced: false'"
+      register: unfenced
+      changed_when: false
+      failed_when: unfenced.stdout | int != n_brk | int
+
+    - name: Create topic RF={{ rf }}, min.insync.replicas=2
+      ansible.builtin.command: >
+        kafka-topics --bootstrap-server {{ bs }} --create --if-not-exists --topic {{ topic }}
+        --partitions 6 --replication-factor {{ rf }} --config min.insync.replicas=2
+
+    - name: Describe topic
+      ansible.builtin.command: kafka-topics --bootstrap-server {{ bs }} --describe --topic {{ topic }}
+      register: desc
+      changed_when: false
+    - ansible.builtin.debug: { var: desc.stdout_lines }
+
+    - name: No under-replicated partitions
+      ansible.builtin.command: kafka-topics --bootstrap-server {{ bs }} --describe --under-replicated-partitions
+      register: urp
+      changed_when: false
+      failed_when: urp.stdout | trim | length > 0
+
+    - name: Produce batch A (acks=all)
+      ansible.builtin.shell: >
+        seq 1 100 | sed 's/^/A-/' | kafka-console-producer --bootstrap-server {{ bs }}
+        --topic {{ topic }} --producer-property acks=all
+
+    # ---------------- failover: kill controller leader + one broker ----------------
+    - name: Find active controller leader id
+      ansible.builtin.set_fact:
+        leader_id: "{{ quorum.stdout | regex_search('LeaderId:\\s+(\\d+)', '\\1') | first }}"
+
+    - name: Map leader id to host
+      ansible.builtin.shell: grep -l '^node.id={{ leader_id }}$' /etc/controller/server.properties && hostname
+      delegate_to: "{{ item }}"
+      loop: "{{ groups['kafka_controller'] }}"
+      register: lead_map
+      failed_when: false
+      changed_when: false
+
+    - name: Set failover victims
+      ansible.builtin.set_fact:
+        victim_ctrl: "{{ (lead_map.results | selectattr('rc', 'equalto', 0) | first).item }}"
+        victim_brk: "{{ groups['kafka_broker'][-1] }}"
+
+    - name: Stop controller leader ({{ victim_ctrl }}) and broker ({{ victim_brk }})
+      ansible.builtin.systemd_service:
+        name: "{{ item.svc }}"
+        state: stopped
+      delegate_to: "{{ item.host }}"
+      loop:
+        - { host: "{{ victim_ctrl }}", svc: confluent-kcontroller }
+        - { host: "{{ victim_brk }}", svc: confluent-server }
+
+    - name: Wait for a new controller leader
+      ansible.builtin.shell: >
+        kafka-metadata-quorum --bootstrap-server {{ groups['kafka_broker'][0] }}:9092 describe --status
+        | awk '/LeaderId/ {print $2}'
+      register: newleader
+      until: newleader.stdout | length > 0 and newleader.stdout != leader_id
+      retries: 30
+      delay: 2
+      changed_when: false
+
+    - name: Produce batch B with leader controller + 1 broker down (acks=all, minISR=2)
+      ansible.builtin.shell: >
+        seq 1 100 | sed 's/^/B-/' | kafka-console-producer
+        --bootstrap-server {{ groups['kafka_broker'][0] }}:9092
+        --topic {{ topic }} --producer-property acks=all
+      register: prodb
+      retries: 5
+      delay: 5
+      until: prodb.rc == 0 and 'ERROR' not in prodb.stderr
+
+    - name: Consume all (degraded cluster)
+      ansible.builtin.shell: >
+        kafka-console-consumer --bootstrap-server {{ groups['kafka_broker'][0] }}:9092
+        --topic {{ topic }} --from-beginning --max-messages 200 --timeout-ms 60000 | sort -u | wc -l
+      register: consumed
+      changed_when: false
+
+    - name: Restart stopped nodes
+      ansible.builtin.systemd_service:
+        name: "{{ item.svc }}"
+        state: started
+      delegate_to: "{{ item.host }}"
+      loop:
+        - { host: "{{ victim_ctrl }}", svc: confluent-kcontroller }
+        - { host: "{{ victim_brk }}", svc: confluent-server }
+
+    - name: Wait until no under-replicated partitions again
+      ansible.builtin.command: kafka-topics --bootstrap-server {{ bs }} --describe --under-replicated-partitions
+      register: urp2
+      until: urp2.rc == 0 and urp2.stdout | trim | length == 0
+      retries: 30
+      delay: 4
+      changed_when: false
+
+    - name: Failover summary
+      ansible.builtin.assert:
+        that: consumed.stdout | int == 200
+        success_msg: >-
+          old leader {{ leader_id }} ({{ victim_ctrl }}) -> new leader {{ newleader.stdout }};
+          {{ victim_brk }} down; 200/200 messages (100 before, 100 during outage) consumed;
+          nodes restarted, 0 under-replicated partitions

@@ -1,0 +1,53 @@
+[WARNING]: Collection community.general does not support Ansible version
+2.18.20
+
+PLAY [Prepare RHEL 9 hosts for cp-ansible] *************************************
+
+TASK [Install python3.12 (raw - before a >=3.10 interpreter exists)] ***********
+changed: [kafka-controller2]
+changed: [kafka-controller1]
+changed: [kafka-broker1]
+changed: [kafka-controller3]
+changed: [kafka-broker2]
+changed: [kafka-broker3]
+
+TASK [Gather facts (now with python3.12)] **************************************
+ok: [kafka-broker3]
+ok: [kafka-broker1]
+ok: [kafka-controller3]
+ok: [kafka-controller1]
+ok: [kafka-controller2]
+ok: [kafka-broker2]
+
+TASK [Is host registered with RHSM?] *******************************************
+ok: [kafka-broker2]
+ok: [kafka-controller2]
+ok: [kafka-controller1]
+ok: [kafka-controller3]
+ok: [kafka-broker1]
+ok: [kafka-broker3]
+
+TASK [Enable CodeReady Builder repo (registered RHEL only; UBI/Satellite may already provide it)] ***
+skipping: [kafka-controller1]
+skipping: [kafka-controller2]
+skipping: [kafka-controller3]
+skipping: [kafka-broker1]
+skipping: [kafka-broker2]
+skipping: [kafka-broker3]
+
+TASK [Install Python 3.12 deps as RPMs] ****************************************
+changed: [kafka-controller1]
+changed: [kafka-controller3]
+changed: [kafka-broker1]
+changed: [kafka-broker2]
+changed: [kafka-broker3]
+changed: [kafka-controller2]
+
+PLAY RECAP *********************************************************************
+kafka-broker1              : ok=4    changed=2    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+kafka-broker2              : ok=4    changed=2    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+kafka-broker3              : ok=4    changed=2    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+kafka-controller1          : ok=4    changed=2    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+kafka-controller2          : ok=4    changed=2    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+kafka-controller3          : ok=4    changed=2    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+

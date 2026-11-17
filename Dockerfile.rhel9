@@ -1,0 +1,7 @@
+# RHEL 9 (UBI9) with systemd as PID 1 - stands in for a RHEL 9 VM.
+# Java is intentionally NOT installed: cp-ansible must install java-21-openjdk itself.
+FROM redhat/ubi9-init:latest
+RUN dnf -y install python3 sudo procps-ng hostname iproute rsync tar unzip openssl \
+ && dnf clean all
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]
