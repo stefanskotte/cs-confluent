@@ -151,6 +151,7 @@ deleted afterwards.
 | `manage_firewalld` / `firewalld_zone` | `true` / `public` | cp-ansible doesn't open host firewall ports |
 | `ansible.cfg` `hash_behaviour` | `merge` | Required by the collection |
 | `ansible.cfg` `[tags] skip` | `pip-package` | Python deps come as RPMs; no PyPI |
+| `ansible.cfg` `ssh_args` | `... -o LogLevel=ERROR` | Hides the hosts' SSH login banner, which otherwise shows up as error output |
 
 Commented examples in the file cover data disks (`log.dirs`) and JVM heap.
 The collection defaults are broker `-Xms1g -Xmx6g` and controller `-Xms1536M -Xmx4g`.
