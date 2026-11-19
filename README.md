@@ -62,7 +62,9 @@ PORTS.md, epg-port-map.csv          network / EPG order
     GPG key `https://packages.confluent.io/rpm/8.2/archive.key`)
 - DNS: every host's FQDN resolves from every other host *and* from the clients.
   Kafka advertises the inventory hostname.
-- A deploy user (default `ansible`) with your SSH key and sudo
+- A sudo-capable login on every host, reachable with your SSH key. The user comes from
+  `~/.ssh/config` (per-host `User`), else your local login name. `ansible_user` is
+  deliberately not set, because it would override `~/.ssh/config`
 - Data disks mounted, if you use them (see `log.dirs` in `group_vars/all.yml`)
 - EPG contracts in place (see [PORTS.md](PORTS.md))
 
@@ -82,7 +84,7 @@ ansible-galaxy collection install -r requirements.yml -p ./collections
 
 # 2. Describe the environment
 vi inventories/prod/hosts.yml              # real FQDNs
-vi inventories/prod/group_vars/all.yml     # ansible_user, repository_configuration, log.dirs, heap
+vi inventories/prod/group_vars/all.yml     # repository_configuration, log.dirs, heap
 
 # 3. Trust the host keys (host_key_checking stays on)
 ansible-inventory --list | python3 -c 'import json,sys;print("\n".join(json.load(sys.stdin)["_meta"]["hostvars"]))' \

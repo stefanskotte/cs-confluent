@@ -5,7 +5,11 @@
 
 # --- Connection: SSH as a sudo-capable deploy user ---------------------------
 ansible_connection: ssh
-ansible_user: ansible            # deploy user on the delivered servers
+# Remote user: NOT set here on purpose, so ssh decides - the per-host 'User' in
+# ~/.ssh/config, else your local login name. Setting ansible_user (here, in the
+# inventory or with -u) is passed to ssh as -o User=... and OVERRIDES ~/.ssh/config.
+# Only set it if every host uses the same account:
+# ansible_user: ansible
 ansible_become: true
 ansible_become_method: sudo
 # If sudo needs a password, run with -K (--ask-become-pass) or vault it:
